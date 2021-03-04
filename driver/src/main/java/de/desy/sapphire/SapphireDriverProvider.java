@@ -1,4 +1,4 @@
-package org.dcache;
+package de.desy.sapphire;
 
 import org.dcache.pool.nearline.spi.NearlineStorage;
 import org.dcache.pool.nearline.spi.NearlineStorageProvider;

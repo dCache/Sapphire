@@ -1,4 +1,4 @@
-package org.dcache;
+package de.desy.sapphire;
 
 import java.io.*;
 import java.net.URI;
