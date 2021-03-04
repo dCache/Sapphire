@@ -42,7 +42,7 @@ public class SapphireDriver implements NearlineStorage
     @Override
     public void flush(Iterable<FlushRequest> requests)
     {
-        FindIterable<Document> results;
+        FindIterable<Document> pnfs_entries;
         String pnfsid;
         _log.debug("Triggered flush()");
         for (FlushRequest flushRequest : requests) {
@@ -63,9 +63,9 @@ public class SapphireDriver implements NearlineStorage
                 }
             }
 
-            results = files.find(eq("pnfsid", flushRequest.getFileAttributes().getPnfsId().toString()));
-            if(results.iterator().hasNext()) {
-                Document result = results.iterator().next();
+            pnfs_entries = files.find(eq("pnfsid", flushRequest.getFileAttributes().getPnfsId().toString())).limit(1);
+            Document result = pnfs_entries.first();
+            if(result != null) {
                 _log.debug("Result: {}", result.toJson());
                 if (result.containsKey("archiveUrl")) {
                     try {
