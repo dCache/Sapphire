@@ -250,11 +250,14 @@ class Container:
         return verified
 
     def pack(self):
-        self.download_files()
-        logging.info("Downloaded files")
-        for file in os.listdir(self.temp_dir):
-            logging.debug(f"Add file {file} to zipfile")
-            self.zip_file.write(os.path.join(self.temp_dir, file))
+        for pnfsid in self.content_dict:
+            self.zip_file.write(self.content_dict[pnfsid]['localpath'], arcname=pnfsid)
+
+        # self.download_files()
+        # logging.info("Downloaded files")
+        # for file in os.listdir(self.temp_dir):
+        #     logging.debug(f"Add file {file} to zipfile")
+        #     self.zip_file.write(os.path.join(self.temp_dir, file))
         logging.debug("Added all files from temp dir to zip")
         self.zip_file.close()
 
@@ -268,12 +271,12 @@ class Container:
             mongo_db.files.update_many({"state": f"added: {self.filepath}"},
                                        {"$set": {"state": "new"}, "$unset": {"lock": ""}})
             os.remove(self.filepath)
-            for file in os.listdir(self.temp_dir):
-                os.remove(os.path.join(self.temp_dir, file))
-            os.rmdir(self.temp_dir)
-        for file in os.listdir(self.temp_dir):
-            os.remove(os.path.join(self.temp_dir, file))
-        os.rmdir(self.temp_dir)
+            # for file in os.listdir(self.temp_dir):
+            #     os.remove(os.path.join(self.temp_dir, file))
+            # os.rmdir(self.temp_dir)
+        # for file in os.listdir(self.temp_dir):
+        #     os.remove(os.path.join(self.temp_dir, file))
+        # os.rmdir(self.temp_dir)
 
     def close(self):
         if self.zip_file:
