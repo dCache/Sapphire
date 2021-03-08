@@ -48,7 +48,7 @@ class UserInterruptException(Exception):
 
 class GroupPackager:
     def __init__(self, path, file_pattern, store_group, store_name, archive_size,
-                 min_age, max_age, verify):
+                 min_age, max_age, verify, archive_path):
         self.path = path
         self.path_pattern = re.compile(os.path.join(path, file_pattern))
         self.store_group = re.compile(store_group)
@@ -58,6 +58,7 @@ class GroupPackager:
         self.max_age = int(max_age)
         self.verify = verify
         self.logger = logging.getLogger(name=f"GroupPackager[{self.path_pattern.pattern}]")
+        self.archive_path = archive_path
 
     def write_status(self, arcfile, current_size, next_file):
         global script_id
@@ -137,7 +138,7 @@ class GroupPackager:
 
                     if container is None:
                         if sumsize >= self.archive_size or old_files_mode:
-                            container = Container(self.verify)
+                            container = Container(self.verify, self.archive_path)
                             self.logger.info(f"Creating new Container {container}. {filecount} files "
                                              f"[{sumsize} bytes] remaining.")
                         else:
@@ -209,7 +210,7 @@ class GroupPackager:
 
 
 class Container:
-    def __init__(self, verify):
+    def __init__(self, verify, archive_path):
         self.filename = str(uuid.uuid1())
         self.filepath = os.path.join(working_directory, "container", self.filename)
         self.temp_dir = os.path.join(working_directory, f"tmp-{self.filename}")
@@ -218,6 +219,7 @@ class Container:
         self.filecount = 0
         self.verify = verify
         self.zip_file = ZipFile(self.filepath, 'w')
+        self.archive_path = archive_path
 
     def add(self, pnfsid, filepath, localpath, size):
         self.content_dict[pnfsid] = {"filepath": filepath, "localpath": localpath}
@@ -265,7 +267,7 @@ class Container:
             logging.info(f"Container {self.filepath} successfully stored locally")
             mongo_db.files.update_many({'state': f"added: {self.filepath}"},
                                        {"$set": {"state": f"archived: {self.filepath}"}, "$unset": {"lock": ""}})
-            mongo_db.archives.insert_one({"path": self.filepath})
+            mongo_db.archives.insert_one({"path": self.filepath, "dest_path": self.archive_path})
         else:
             logging.warning(f"Removing container {self.filepath} due to verification error")
             mongo_db.files.update_many({"state": f"added: {self.filepath}"},
@@ -361,6 +363,7 @@ def main(configfile="/etc/dcache/container.conf"):
                     max_age = configuration.get(group, "max_age")
                     verify = configuration.get(group, "verify")
                     path_regex = re.compile(configuration.get(group, "path_expression"))
+                    archive_path = configuration.get(group, "archive_path")
 
                     logger.debug(f"file_pattern: {file_pattern}")
                     logger.debug(f"store_group: {store_group}")
@@ -370,6 +373,7 @@ def main(configfile="/etc/dcache/container.conf"):
                     logger.debug(f"max_age: {max_age}")
                     logger.debug(f"verify: {verify}")
                     logger.debug(f"path_expression: {path_regex}")
+                    logger.debug(f"archive_path: {archive_path}")
 
                     paths = mongo_db.files.find({"parent": path_regex}).distinct("parent")
                     pathset = set()
@@ -379,7 +383,7 @@ def main(configfile="/etc/dcache/container.conf"):
 
                     for path in pathset:
                         packager = GroupPackager(path, file_pattern, store_group, store_name, archive_size,
-                                                 min_age, max_age, verify)
+                                                 min_age, max_age, verify, archive_path)
                         group_packager.append(packager)
                         logger.info(f"Added packager {group} for paths matching {packager.path}")
 
