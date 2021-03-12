@@ -54,11 +54,11 @@ class GroupPackager:
         self.store_group = re.compile(store_group)
         self.store_name = re.compile(store_name)
         self.archive_size = int(archive_size.replace('G', '000000000').replace('M', '000000').replace('K', '000'))
+        self.archive_path = archive_path
         self.min_age = int(min_age)
         self.max_age = int(max_age)
         self.verify = verify
         self.logger = logging.getLogger(name=f"GroupPackager[{self.path_pattern.pattern}]")
-        self.archive_path = archive_path
 
     def write_status(self, arcfile, current_size, next_file):
         global script_id
@@ -128,7 +128,7 @@ class GroupPackager:
                                          "will collect new files in next run.")
                         break
 
-                    self.logger.debug(f"Next file {f['path']} {f['pnfsid']}, remaining {filecount} "
+                    self.logger.debug(f"Next file {f['path']} [{f['pnfsid']}], remaining {filecount} "
                                       f"files [{sumsize} bytes]")
                     if not running:
                         if container:
@@ -157,8 +157,9 @@ class GroupPackager:
                         container.add(f['pnfsid'], f['path'], localfile, f['size'])
                         f['state'] = f"added: {container.filepath}"
                         f['lock'] = script_id
-                        cursor.collection.replace_one({'state': 'new', 'path': self.path_pattern, 'group': self.store_group,
-                                            'store': self.store_name, 'ctime': {'$lt': ctime_threshold}}, f)
+                        cursor.collection.replace_one(
+                            {'state': 'new', 'path': self.path_pattern, 'group': self.store_group,
+                             'store': self.store_name, 'ctime': {'$lt': ctime_threshold}}, f)
                         self.logger.debug(f"Added file {f['path']} [{f['pnfsid']}]")
                     except(IOError, OSError) as e:
                         self.logger.exception(f"{'IOError' if type(e) == type(IOError) else 'OSError'} "
@@ -220,6 +221,7 @@ class Container:
         self.verify = verify
         self.zip_file = ZipFile(self.filepath, 'w')
         self.archive_path = archive_path
+        self.logger = logging.getLogger(name=f"Container[{self.filename}]")
 
     def add(self, pnfsid, filepath, localpath, size):
         self.content_dict[pnfsid] = {"filepath": filepath, "localpath": localpath}
@@ -231,7 +233,7 @@ class Container:
         for pnfsid in self.content_dict.keys():
             filepath = self.content_dict[pnfsid]['filepath']
             localpath = self.content_dict[pnfsid]['localpath']
-            logging.info(f"Filepath: {filepath};; localpath: {localpath}")
+            self.logger.debug(f"Filepath: {filepath};; localpath: {localpath}")
             try:
                 shutils.copy(localpath, os.path.join(self.temp_dir, pnfsid))
             except Exception as e:
@@ -241,12 +243,12 @@ class Container:
         if self.verify == 'filelist':
             verified = len(self.zip_file.filelist) == self.filecount
         elif self.verify == 'chksum':
-            logging.warning("Checksum verification not implemented yet")
+            self.logger.warning("Checksum verification not implemented yet")
             verified = True
         elif self.verify == 'off':
             verified = True
         else:
-            logging.warning(f"Unknown verification method {self.verify}. Assuming failure!")
+            self.logger.warning(f"Unknown verification method {self.verify}. Assuming failure!")
             verified = False
 
         return verified
@@ -260,16 +262,16 @@ class Container:
         # for file in os.listdir(self.temp_dir):
         #     logging.debug(f"Add file {file} to zipfile")
         #     self.zip_file.write(os.path.join(self.temp_dir, file))
-        logging.debug("Added all files from temp dir to zip")
+        self.logger.debug("Added all files from temp dir to zip")
         self.zip_file.close()
 
         if self.verify_archive():
-            logging.info(f"Container {self.filepath} successfully stored locally")
+            self.logger.info(f"Container {self.filepath} successfully stored locally")
             mongo_db.files.update_many({'state': f"added: {self.filepath}"},
                                        {"$set": {"state": f"archived: {self.filepath}"}, "$unset": {"lock": ""}})
             mongo_db.archives.insert_one({"path": self.filepath, "dest_path": self.archive_path})
         else:
-            logging.warning(f"Removing container {self.filepath} due to verification error")
+            self.logger.warning(f"Removing container {self.filepath} due to verification error")
             mongo_db.files.update_many({"state": f"added: {self.filepath}"},
                                        {"$set": {"state": "new"}, "$unset": {"lock": ""}})
             os.remove(self.filepath)
